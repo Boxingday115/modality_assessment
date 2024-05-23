@@ -1,0 +1,274 @@
+---
+title: "Is Smartphone the Smarter Choice - Statistical Analysis"
+author: "Hampus Lennaárd"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(purrr)
+library(magrittr)
+library(stringr)
+library(caret)
+library(knitr)
+library(kableExtra)
+library(rstatix)
+library(stats)
+library(corrplot)
+library(moments)
+library(ez)
+```
+
+```{r function-load_csv_data, echo=FALSE, warning=FALSE, message=FALSE}}
+#' Loads CSV datafile 
+
+load_xlsx <- function(file_path, sheet) {
+  # Check if the file exists at the given path
+  if (!file.exists(file_path)) {
+    stop("The file does not exist at the specified path: ", file_path)
+  }
+  
+  # Read the CSV data into a data frame
+  data <- readxl::read_xlsx(file_path, sheet = sheet)
+  
+  # Return the loaded data
+  return(data)
+}
+```
+```{r call-load-data, echo=FALSE}
+wcst_pc <- load_xlsx("E:/thesis_2024/final_data.xlsx", 1)
+wcst_phone <- load_xlsx("E:/thesis_2024/final_data.xlsx", 2)
+
+cw_pc <- load_xlsx("E:/thesis_2024/final_data.xlsx", 3)
+cw_phone <- load_xlsx("E:/thesis_2024/final_data.xlsx", 4)
+
+tol_pc <- load_xlsx("E:/thesis_2024/final_data.xlsx", 5)
+tol_phone <- load_xlsx("E:/thesis_2024/final_data.xlsx", 6)
+
+# Creating a list for easier summarisation
+dataframes <- list(wcst_pc, wcst_phone, cw_pc, cw_phone, tol_pc, tol_phone)
+```
+
+```{r function-summarise_descriptives, echo=FALSE, warning=FALSE, message=FALSE}
+summarise_data <- function(dataframes, variable_names) {
+  summarised_data <- data.frame()
+  
+  for (df in dataframes) {
+    
+    # Fetch Test name 
+    test_name <- df$test[1]
+    modality_name <- df$modality[1]
+    
+    # Determine the performance variable
+    performance_var <- variable_names[which(variable_names %in% names(df))[1]]
+    perf_var <- df[[performance_var]]
+    
+    # Determine Time variable
+    time_columns <- select(df, ends_with("_time"))
+    
+    # Calculate summary statistics
+    summary_data <- df %>%
+      summarise(
+        test = test_name,
+        modality = modality_name,
+        total_n = n(),
+        mean_performance = round(mean(perf_var, na.rm = TRUE), 3),
+        median_performance = round(median(perf_var, na.rm = TRUE), 3),
+        sd_performance = round(sd(perf_var, na.rm = TRUE), 3),
+        kurtosis_performance = round(kurtosis(perf_var, na.rm = TRUE), 3),
+        skew_performance = round(skewness(perf_var, na.rm = TRUE), 3),
+        mean_time = if (ncol(time_columns) > 0) mean(as.matrix(time_columns), na.rm = TRUE) else NA,
+        median_time = if (ncol(time_columns) > 0) median(as.matrix(time_columns), na.rm = TRUE) else NA,
+        sd_time = if (ncol(time_columns) > 0) sd(as.matrix(time_columns), na.rm = TRUE) else NA,
+        kurtosis_time = if (ncol(time_columns) > 0) kurtosis(as.matrix(time_columns), na.rm = TRUE) else NA,
+        skew_time = if (ncol(time_columns) > 0) skewness(as.matrix(time_columns), na.rm = TRUE) else NA
+      )
+    
+    summarised_data <- bind_rows(summarised_data, summary_data)
+  }
+  
+  return(summarised_data)
+}
+
+```
+```{r call-summarise_descriptives, echo=FALSE, warning=FALSE, message=FALSE}
+variable_names <- c("rate_correct", "adj_attempts")
+summarised_data <- summarise_data(dataframes, variable_names)
+```
+
+```{r function-standardize_scores, echo=FALSE, warning=FALSE, message=FALSE}
+standardize_scores <- function(performance_variable) {
+  (performance_variable - mean(performance_variable, na.rm = TRUE)) / sd(performance_variable, na.rm = TRUE)
+}
+```
+```{r call-standardize_scores, echo=FALSE, warning=FALSE, message=FALSE}
+wcst_pc <- wcst_pc %>% mutate(performance_z = standardize_scores(rate_correct))
+wcst_phone <- wcst_phone %>% mutate(performance_z = standardize_scores(rate_correct))
+
+cw_pc <- cw_pc %>% mutate(performance_z = standardize_scores(rate_correct))
+cw_phone <- cw_phone %>% mutate(performance_z = standardize_scores(rate_correct))
+
+tol_pc <- tol_pc %>% mutate(performance_z = standardize_scores(adj_attempts))
+tol_phone <- tol_phone %>% mutate(performance_z = standardize_scores(adj_attempts))
+```
+
+```{r function-merge_melt, echo=FALSE, warning=FALSE, message=FALSE}
+merge_melt <- function(dataframes) {
+  combined_data <- bind_rows(dataframes)
+  
+  melted_data <- combined_data %>%
+  select(uid, test, modality, performance_z) %>%
+  pivot_longer(cols = performance_z, names_to = "metric", values_to = "value")
+
+  return(melted_data)
+}
+```
+```{r call-merge_melt, echo=FALSE, warning=FALSE, message=FALSE}
+dataframes <- list(wcst_pc, wcst_phone, cw_pc, cw_phone, tol_pc, tol_phone)
+melted_data <- merge_melt(dataframes)
+```
+
+```{r call-create-boxplot, echo=FALSE, warning=FALSE, message=FALSE}
+create_boxplot <- function(long_data) {
+  unique_tests <- unique(long_data$test)
+  
+  for (test in unique_tests) {
+    subset_data <- long_data %>% filter(test == !!test)
+    
+    plot <- ggplot(subset_data, aes(x = modality, y = value, fill = modality)) +
+      geom_boxplot() +
+      theme_minimal() +
+      labs(
+        title = paste("Performance for", test, "Test"),
+        y = "Z-Score",
+        x = "Modality"
+      )
+    
+    print(plot)
+  }
+}
+
+create_boxplot(melted_data)
+```
+
+```{r call-create-histograms, echo=FALSE, warning=FALSE, message=FALSE}
+create_histograms <- function(long_data) {
+  unique_tests <- unique(long_data$test)
+  
+  for (test in unique_tests) {
+    subset_data <- long_data %>% filter(test == !!test)
+    
+    # Calculate binwidth using Freedman-Diaconis rule
+    binwidth <- 2 * IQR(subset_data$value, na.rm = TRUE) / (nrow(subset_data)^(1/3))
+    
+    plot <- ggplot(subset_data, aes(x = value, fill = modality)) +
+      geom_histogram(binwidth = binwidth) +
+      facet_grid(vars(modality)) +
+      theme_minimal() +
+      labs(
+        title = paste("Performance for", test, "Test"),
+        x = "Z-Score",
+        y = "Count"
+      )
+    
+    print(plot)
+  }
+}
+
+create_histograms(melted_data)
+```
+
+```{r function-outlier_analysis, echo=FALSE, message=FALSE, warning=FALSE}
+
+outlier_analysis <- function(long_data) {
+  outlier_data <- long_data %>%
+    group_by(test, modality) %>%
+    identify_outliers(value)
+  data.frame(outlier_data)
+  
+  return(outlier_data)
+}
+```
+```{r call-outlier_analysis, echo=FALSE, message=FALSE, warning=FALSE}
+outliers <- outlier_analysis(melted_data)
+print(outliers)
+```
+
+Data revealed some outliers/extreme values within each test/condition combo, need to decide what to do with these.. 
+
+Anova Normality Check
+```{r function-check_normality, echo=FALSE, warning=FALSE, message=FALSE}
+shapiro_test <- function(long_data) {
+  normality_results <- long_data %>%
+    group_by(test, modality) %>%
+    summarise(
+      shapiro_p_value = shapiro.test(value)$p.value,
+      .groups = 'drop' # this avoids a warning message
+    )
+  
+  return(normality_results)
+}
+
+options(scipen = 999)
+normality <- shapiro_test(melted_data)
+
+```
+
+```{r function-qq_normality, echo=FALSE, warning=FALSE, message=FALSE}
+
+create_qq <- function(long_data) {
+  unique_tests <- unique(long_data$test)
+  
+  for (test in unique_tests) {
+    subset_data <- long_data %>% filter(test == !!test)
+    
+    plot <- ggplot(subset_data, aes(sample = value)) +
+      stat_qq() +
+      stat_qq_line() +
+      facet_grid(vars(modality)) +
+      theme_minimal() +
+      labs(
+        title = paste("Distribution of Performance for", test, "Test"),
+        x = "Theoretical Quantiles",
+        y = "Sample Quantiles"
+      )
+    
+    print(plot)
+  }
+}
+
+create_qq(melted_data)
+
+
+```
+
+```{r function-model_anova, echo=FALSE, warning=FALSE, message=FALSE}
+
+model_anova <- function(long_data) {
+  require(ez)
+  
+    res <- ezANOVA(
+    data = long_data,
+    dv = .(value),         # Dependent variable
+    wid = .(uid),      # Subject identifier
+    within = .(test, modality),  # Within-subject factors
+    detailed = TRUE,
+    type = 3               # Type III sum of squares for unbalanced designs
+    )
+  
+    return(res)
+  
+}
+```
+
+```{r call-model_anova, echo=FALSE, warning=FALSE, message=FALSE}
+anova_res <- model_anova(melted_data)
+print(anova_results)
+```
+
