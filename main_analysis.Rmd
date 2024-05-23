@@ -272,3 +272,5 @@ anova_res <- model_anova(melted_data)
 print(anova_results)
 ```
 
+# Need full dataset, currently missing a few observations
+# Overall the data will contain a few more samples than required, but the data also contains outliers. So would I go about this by using the full data and removing the outliers, or do I keep myself to the required 39 and remove outliers out of those observations?
